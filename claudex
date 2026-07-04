@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+#
+# claudex - 以 bypassPermissions("YOLO")模式运行 Claude Code 的包装脚本
+#
+# 用法:
+#   claudex "帮我修复所有 lint 错误"
+#   claudex -y "无人值守跑个重构任务"          # 跳过二次确认
+#   claudex --proxy "需要代理时加这个"
+#   claudex --safe "临时想用正常权限模式跑一次"
+#   claudex --model opus "换个模型"
+#   claudex --add-dir ../lib --add-dir ../apps "跨目录协作"
+#   claudex -- --permission-mode plan --allow-dangerously-skip-permissions "先规划再切bypass"
+#
+# 环境变量 (写进 ~/.zshrc 做默认值):
+#   CLAUDEX_MODEL          默认模型别名 (sonnet/opus/haiku/fable)，不设置则用 claude 自身默认
+#   CLAUDEX_PROXY_HOST     默认代理主机，默认 127.0.0.1
+#   CLAUDEX_PROXY_PORT     默认代理端口，默认 7897
+#   CLAUDEX_PROXY_TYPE     http | socks5 | socks5h，默认 socks5
+#   CLAUDEX_NO_PROXY       默认 NO_PROXY 列表
+#   CLAUDEX_SKIP_CONFIRM   设为 1 等价于始终传 -y，跳过二次确认
+#
+# 设计要点:
+#   1. 默认不使用代理（区别于 codexx），仅在显式传 --proxy 时才注入代理变量。
+#   2. 默认加 --dangerously-skip-permissions，因为这是本脚本存在的意义（YOLO 模式）。
+#   3. 默认同时加 --disallowedTools 兜底防护：即便在 bypass 模式下，仍拒绝
+#      "rm -rf" 这类毁灭性命令。--disallowedTools 是官方文档确认在所有权限模式下
+#      都生效的规则（--allowedTools 在 bypass 模式下有已知 bug 会被忽略），
+#      是 bypass 模式下唯一还真正生效的安全阀。用 --no-guard 可以关闭。
+#   4. 首次运行前打印醒目警告并要求二次确认，避免手滑在裸机重要目录里跑飞。
+#      用 -y / --yes 或设置 CLAUDEX_SKIP_CONFIRM=1 跳过。
+#   5. --safe 可以临时回到正常权限模式（不加 bypass），用于偶尔想手动审批的场合。
+#   6. 其余未识别的参数原样透传给 claude。
+
+set -eo pipefail
+
+# ---------- 默认配置 ----------
+MODEL="${CLAUDEX_MODEL:-}"
+PROXY_HOST="${CLAUDEX_PROXY_HOST:-127.0.0.1}"
+PROXY_PORT="${CLAUDEX_PROXY_PORT:-7897}"
+PROXY_TYPE="${CLAUDEX_PROXY_TYPE:-socks5}"
+NO_PROXY_LIST="${CLAUDEX_NO_PROXY:-localhost,127.0.0.1,::1}"
+USE_PROXY=0
+SAFE_MODE=0
+SKIP_CONFIRM="${CLAUDEX_SKIP_CONFIRM:-0}"
+USE_GUARD=1
+ADD_DIRS=()
+EXTRA_ARGS=()
+
+# ---------- 参数解析 ----------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --proxy)
+      USE_PROXY=1; shift ;;
+    --host)
+      PROXY_HOST="$2"; USE_PROXY=1; shift 2 ;;
+    --port)
+      PROXY_PORT="$2"; USE_PROXY=1; shift 2 ;;
+    --type)
+      PROXY_TYPE="$2"; shift 2 ;;
+    --safe)
+      SAFE_MODE=1; shift ;;
+    --no-guard)
+      USE_GUARD=0; shift ;;
+    --model)
+      MODEL="$2"; shift 2 ;;
+    --add-dir)
+      ADD_DIRS+=("$2"); shift 2 ;;
+    -y|--yes)
+      SKIP_CONFIRM=1; shift ;;
+    --)
+      shift
+      EXTRA_ARGS+=("$@")
+      break ;;
+    -h|--help)
+      sed -n '1,25p' "$0"
+      exit 0 ;;
+    *)
+      EXTRA_ARGS+=("$1"); shift ;;
+  esac
+done
+
+# ---------- 检查 claude 是否已安装 ----------
+if ! command -v claude >/dev/null 2>&1; then
+  echo "[claudex] 未找到 claude 命令，请先安装 Claude Code CLI" >&2
+  exit 1
+fi
+
+# ---------- 危险模式二次确认 ----------
+if [[ "$SAFE_MODE" -eq 0 && "$SKIP_CONFIRM" -ne 1 ]]; then
+  echo "⚠️  [claudex] 即将以 --dangerously-skip-permissions (bypass) 模式启动 Claude Code。"
+  echo "    所有文件写入 / shell 命令 / 网络请求都不会再询问确认。"
+  echo "    仅建议在容器/VM等隔离环境，或你完全信任当前任务范围时使用。"
+  echo "    当前目录: $(pwd)"
+  read -r -p "    确认继续吗？[y/N] " reply
+  case "$reply" in
+    [yY][eE][sS]|[yY]) ;;
+    *) echo "[claudex] 已取消。可以加 --safe 使用正常权限模式，或加 -y 跳过此确认。"; exit 1 ;;
+  esac
+fi
+
+# ---------- 组装 claude 参数 ----------
+CLAUDE_ARGS=()
+
+if [[ "$SAFE_MODE" -eq 0 ]]; then
+  CLAUDE_ARGS+=(--dangerously-skip-permissions)
+  if [[ "$USE_GUARD" -eq 1 ]]; then
+    CLAUDE_ARGS+=(--disallowedTools "Bash(rm -rf:*)" "Bash(rm -fr:*)" "Bash(sudo rm:*)")
+  fi
+fi
+
+if [[ -n "$MODEL" ]]; then
+  CLAUDE_ARGS+=(--model "$MODEL")
+fi
+
+if [[ "${#ADD_DIRS[@]}" -gt 0 ]]; then
+  for d in "${ADD_DIRS[@]}"; do
+    CLAUDE_ARGS+=(--add-dir "$d")
+  done
+fi
+
+if [[ "${#EXTRA_ARGS[@]}" -gt 0 ]]; then
+  CLAUDE_ARGS+=("${EXTRA_ARGS[@]}")
+fi
+
+# ---------- 运行 ----------
+if [[ "$USE_PROXY" -eq 1 ]]; then
+  PROXY_URL="${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
+  echo "[claudex] 使用代理 ${PROXY_URL} 启动 claude..."
+  if ! curl -x "${PROXY_URL}" -s -m 5 -o /dev/null -w "%{http_code}" https://api.anthropic.com/ 2>/dev/null | grep -qE '^[0-9]{3}$'; then
+    echo "[claudex] 警告: 代理 ${PROXY_URL} 似乎不可达，仍继续尝试启动..." >&2
+  fi
+  env \
+    http_proxy="${PROXY_URL}" \
+    https_proxy="${PROXY_URL}" \
+    HTTP_PROXY="${PROXY_URL}" \
+    HTTPS_PROXY="${PROXY_URL}" \
+    all_proxy="${PROXY_URL}" \
+    ALL_PROXY="${PROXY_URL}" \
+    no_proxy="${NO_PROXY_LIST}" \
+    NO_PROXY="${NO_PROXY_LIST}" \
+    claude "${CLAUDE_ARGS[@]}"
+else
+  env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
+    claude "${CLAUDE_ARGS[@]}"
+fi
