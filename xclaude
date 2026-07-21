@@ -33,6 +33,8 @@
 
 set -eo pipefail
 
+CMD=$(basename "$0")
+
 # ---------- 默认配置 ----------
 MODEL="${CLAUDEX_MODEL:-}"
 PROXY_HOST="${CLAUDEX_PROXY_HOST:-127.0.0.1}"
@@ -81,20 +83,20 @@ done
 
 # ---------- 检查 claude 是否已安装 ----------
 if ! command -v claude >/dev/null 2>&1; then
-  echo "[claudex] 未找到 claude 命令，请先安装 Claude Code CLI" >&2
+  echo "[$CMD] 未找到 claude 命令，请先安装 Claude Code CLI" >&2
   exit 1
 fi
 
 # ---------- 危险模式二次确认 ----------
 if [[ "$SAFE_MODE" -eq 0 && "$SKIP_CONFIRM" -ne 1 ]]; then
-  echo "⚠️  [claudex] 即将以 --dangerously-skip-permissions (bypass) 模式启动 Claude Code。"
+  echo "⚠️  [$CMD] 即将以 --dangerously-skip-permissions (bypass) 模式启动 Claude Code。"
   echo "    所有文件写入 / shell 命令 / 网络请求都不会再询问确认。"
   echo "    仅建议在容器/VM等隔离环境，或你完全信任当前任务范围时使用。"
   echo "    当前目录: $(pwd)"
   read -r -p "    确认继续吗？[y/N] " reply
   case "$reply" in
     [yY][eE][sS]|[yY]) ;;
-    *) echo "[claudex] 已取消。可以加 --safe 使用正常权限模式，或加 -y 跳过此确认。"; exit 1 ;;
+    *) echo "[$CMD] 已取消。可以加 --safe 使用正常权限模式，或加 -y 跳过此确认。"; exit 1 ;;
   esac
 fi
 
@@ -125,9 +127,9 @@ fi
 # ---------- 运行 ----------
 if [[ "$USE_PROXY" -eq 1 ]]; then
   PROXY_URL="${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
-  echo "[claudex] 使用代理 ${PROXY_URL} 启动 claude..."
+  echo "[$CMD] 使用代理 ${PROXY_URL} 启动 claude..."
   if ! curl -x "${PROXY_URL}" -s -m 5 -o /dev/null -w "%{http_code}" https://api.anthropic.com/ 2>/dev/null | grep -qE '^[0-9]{3}$'; then
-    echo "[claudex] 警告: 代理 ${PROXY_URL} 似乎不可达，仍继续尝试启动..." >&2
+    echo "[$CMD] 警告: 代理 ${PROXY_URL} 似乎不可达，仍继续尝试启动..." >&2
   fi
   env \
     http_proxy="${PROXY_URL}" \

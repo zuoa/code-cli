@@ -25,6 +25,8 @@
 
 set -eo pipefail
 
+CMD=$(basename "$0")
+
 # ---------- 默认配置 ----------
 PROXY_HOST="${CODEXX_PROXY_HOST:-127.0.0.1}"
 PROXY_PORT="${CODEXX_PROXY_PORT:-7897}"
@@ -64,7 +66,7 @@ done
 
 # ---------- 检查 codex 是否已安装 ----------
 if ! command -v codex >/dev/null 2>&1; then
-  echo "[codexx] 未找到 codex 命令，请先安装: npm install -g @openai/codex" >&2
+  echo "[$CMD] 未找到 codex 命令，请先安装: npm install -g @openai/codex" >&2
   exit 1
 fi
 
@@ -72,13 +74,13 @@ PROXY_URL="${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
 
 # ---------- 代理连通性检测 ----------
 check_proxy() {
-  echo "[codexx] 检测代理 ${PROXY_URL} 是否可用..."
+  echo "[$CMD] 检测代理 ${PROXY_URL} 是否可用..."
   if curl -x "${PROXY_URL}" -s -m 5 -o /dev/null -w "%{http_code}" https://api.openai.com/ 2>/dev/null | grep -qE '^[0-9]{3}$'; then
-    echo "[codexx] 代理可用 ✔"
+    echo "[$CMD] 代理可用 ✔"
     return 0
   else
-    echo "[codexx] 代理不可达: ${PROXY_URL}" >&2
-    echo "[codexx] 请确认本地代理软件(Clash/V2Ray等)已启动，且端口/协议正确。" >&2
+    echo "[$CMD] 代理不可达: ${PROXY_URL}" >&2
+    echo "[$CMD] 请确认本地代理软件(Clash/V2Ray等)已启动，且端口/协议正确。" >&2
     return 1
   fi
 }
@@ -104,7 +106,7 @@ fi
 
 # ---------- 运行 ----------
 if [[ "$USE_PROXY" -eq 1 ]]; then
-  echo "[codexx] 使用代理 ${PROXY_URL} 启动 codex..."
+  echo "[$CMD] 使用代理 ${PROXY_URL} 启动 codex..."
   env \
     http_proxy="${PROXY_URL}" \
     https_proxy="${PROXY_URL}" \
@@ -116,7 +118,7 @@ if [[ "$USE_PROXY" -eq 1 ]]; then
     NO_PROXY="${NO_PROXY_LIST}" \
     codex "${CODEX_ARGS[@]}"
 else
-  echo "[codexx] 不使用代理，直接启动 codex..."
+  echo "[$CMD] 不使用代理，直接启动 codex..."
   env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
     codex "${CODEX_ARGS[@]}"
 fi

@@ -51,7 +51,7 @@ hash -r
 
 ---
 
-## xclaude / claudex
+## claudex / xclaude
 
 以 `--dangerously-skip-permissions`（bypass / YOLO）模式运行 Claude Code 的包装脚本。
 
@@ -103,7 +103,7 @@ export CLAUDEX_SKIP_CONFIRM=1        # 始终跳过二次确认
 
 ---
 
-## xcodex / codexx
+## codexx / xcodex
 
 通过本地代理运行 OpenAI Codex CLI 的包装脚本。
 
