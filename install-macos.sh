@@ -51,8 +51,23 @@ ensure_node_and_npm() {
 
 install_cli_packages() {
   mkdir -p "$BIN_DIR"
-  log "安装 ${CLAUDE_PACKAGE} 和 ${CODEX_PACKAGE} 到 ${INSTALL_ROOT} ..."
-  npm install --global --prefix "$INSTALL_ROOT" "$CLAUDE_PACKAGE" "$CODEX_PACKAGE"
+  local need_claude=1 need_codex=1
+  if command -v claude >/dev/null 2>&1; then
+    log "检测到 claude 已安装，跳过安装 ${CLAUDE_PACKAGE}"
+    need_claude=0
+  fi
+  if command -v codex >/dev/null 2>&1; then
+    log "检测到 codex 已安装，跳过安装 ${CODEX_PACKAGE}"
+    need_codex=0
+  fi
+  if [[ $need_claude -eq 0 && $need_codex -eq 0 ]]; then
+    return
+  fi
+  local pkgs=()
+  [[ $need_claude -eq 1 ]] && pkgs+=("$CLAUDE_PACKAGE")
+  [[ $need_codex -eq 1 ]] && pkgs+=("$CODEX_PACKAGE")
+  log "安装 ${pkgs[*]} 到 ${INSTALL_ROOT} ..."
+  npm install --global --prefix "$INSTALL_ROOT" "${pkgs[@]}"
 }
 
 install_wrappers() {
