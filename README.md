@@ -13,6 +13,14 @@ macOS 下 Claude Code 与 OpenAI Codex CLI 的增强包装脚本，支持代理�
 
 ## 快速安装（macOS）
 
+**方式一：curl 一行命令安装（推荐）**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zuoa/code-cli/main/install-macos.sh | bash
+```
+
+**方式二：克隆仓库后安装**
+
 ```bash
 git clone https://github.com/zuoa/code-cli.git
 cd code-cli
