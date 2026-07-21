@@ -19,6 +19,8 @@ macOS 下 Claude Code 与 OpenAI Codex CLI 的增强包装脚本，支持代理�
 curl -fsSL https://raw.githubusercontent.com/zuoa/code-cli/main/install-macos.sh | bash
 ```
 
+curl pipe 模式下，安装脚本会自动从 GitHub 下载 `xclaude` / `xcodex` 包装脚本，无需克隆仓库。
+
 **方式二：克隆仓库后安装**
 
 ```bash
@@ -31,9 +33,14 @@ bash install-macos.sh
 
 1. 检测并安装 Homebrew（如未安装）
 2. 检测并安装 Node.js / npm（如未安装）
-3. 全局安装 `@anthropic-ai/claude-code` 和 `@openai/codex`
+3. 全局安装 `@anthropic-ai/claude-code` 和 `@openai/codex`（已安装则跳过）
 4. 将包装脚本安装到 `~/.local/bin/`
 5. 自动将 `~/.local/bin` 写入 shell 配置文件（`~/.zshrc` 等）
+
+> **自定义安装目录**：可通过 `INSTALL_ROOT` 环境变量覆盖默认的 `~/.local`，例如：
+> ```bash
+> INSTALL_ROOT=/usr/local curl -fsSL https://raw.githubusercontent.com/zuoa/code-cli/main/install-macos.sh | bash
+> ```
 
 安装完成后，若当前终端还找不到命令，执行：
 
