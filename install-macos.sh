@@ -2,7 +2,17 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# When the script is piped via `curl | bash`, BASH_SOURCE[0] is unset.
+# Fall back to an empty string so dirname returns ".", then resolve to pwd.
+_src="${BASH_SOURCE[0]:-}"
+if [[ -n "$_src" && -f "$_src" ]]; then
+  SCRIPT_DIR="$(cd -- "$(dirname -- "$_src")" && pwd)"
+else
+  SCRIPT_DIR=""
+fi
+unset _src
+
+REPO_RAW="https://raw.githubusercontent.com/zuoa/code-cli/main"
 INSTALL_ROOT="${INSTALL_ROOT:-$HOME/.local}"
 BIN_DIR="${INSTALL_ROOT}/bin"
 CLAUDE_PACKAGE="@anthropic-ai/claude-code"
@@ -70,13 +80,28 @@ install_cli_packages() {
   npm install --global --prefix "$INSTALL_ROOT" "${pkgs[@]}"
 }
 
-install_wrappers() {
-  [[ -f "${SCRIPT_DIR}/xclaude" ]] || fail "未找到 ${SCRIPT_DIR}/xclaude"
-  [[ -f "${SCRIPT_DIR}/xcodex" ]] || fail "未找到 ${SCRIPT_DIR}/xcodex"
+fetch_wrapper() {
+  local name="$1"
+  local dest="${BIN_DIR}/${name}"
+  local local_src="${SCRIPT_DIR}/${name}"
 
+  if [[ -n "$SCRIPT_DIR" && -f "$local_src" ]]; then
+    install -m 0755 "$local_src" "$dest"
+  else
+    log "从 GitHub 下载 ${name} ..."
+    curl -fsSL "${REPO_RAW}/${name}" -o "$dest"
+    chmod 0755 "$dest"
+  fi
+}
+
+install_wrappers() {
   install -d "$BIN_DIR"
-  install -m 0755 "${SCRIPT_DIR}/xclaude" "${BIN_DIR}/claudex"
-  install -m 0755 "${SCRIPT_DIR}/xcodex" "${BIN_DIR}/codexx"
+
+  fetch_wrapper xclaude
+  fetch_wrapper xcodex
+
+  install -m 0755 "${BIN_DIR}/xclaude" "${BIN_DIR}/claudex"
+  install -m 0755 "${BIN_DIR}/xcodex" "${BIN_DIR}/codexx"
   ln -sfn claudex "${BIN_DIR}/xclaude"
   ln -sfn codexx "${BIN_DIR}/xcodex"
 }
