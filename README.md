@@ -6,8 +6,8 @@ macOS 下 Claude Code 与 OpenAI Codex CLI 的增强包装脚本，支持代理�
 
 | 脚本 | 安装后命令 | 说明 |
 |------|-----------|------|
-| `xclaude` | `claudex` / `xclaude` | Claude Code 的 bypass 模式包装 |
-| `xcodex`  | `codexx`  / `xcodex`  | OpenAI Codex 的代理模式包装   |
+| `xclaude` | `xclaude` | Claude Code 的 bypass 模式包装 |
+| `xcodex`  | `xcodex`  | OpenAI Codex 的代理模式包装   |
 
 ---
 
@@ -51,20 +51,20 @@ hash -r
 
 ---
 
-## claudex / xclaude
+## xclaude
 
 以 `--dangerously-skip-permissions`（bypass / YOLO）模式运行 Claude Code 的包装脚本。
 
 ### 用法
 
 ```bash
-claudex "帮我修复所有 lint 错误"
-claudex -y "无人值守跑个重构任务"           # 跳过二次确认
-claudex --proxy "需要代理时加这个"
-claudex --safe "临时想用正常权限模式"
-claudex --model opus "换个模型"
-claudex --add-dir ../lib --add-dir ../apps  "跨目录协作"
-claudex -- --permission-mode plan           # 原样透传 claude 原生参数
+xclaude "帮我修复所有 lint 错误"
+xclaude -y "无人值守跑个重构任务"           # 跳过二次确认
+xclaude --proxy "需要代理时加这个"
+xclaude --safe "临时想用正常权限模式"
+xclaude --model opus "换个模型"
+xclaude --add-dir ../lib --add-dir ../apps  "跨目录协作"
+xclaude -- --permission-mode plan           # 原样透传 claude 原生参数
 ```
 
 ### 常用选项
@@ -103,17 +103,17 @@ export CLAUDEX_SKIP_CONFIRM=1        # 始终跳过二次确认
 
 ---
 
-## codexx / xcodex
+## xcodex
 
 通过本地代理运行 OpenAI Codex CLI 的包装脚本。
 
 ### 用法
 
 ```bash
-codexx "写一个快速排序"
-codexx --port 7890 "帮我重构这个函数"
-codexx --no-proxy "本地任务，不走代理"
-codexx --check                        # 仅测试代理连通性，不运行 codex
+xcodex "写一个快速排序"
+xcodex --port 7890 "帮我重构这个函数"
+xcodex --no-proxy "本地任务，不走代理"
+xcodex --check                        # 仅测试代理连通性，不运行 codex
 ```
 
 ### 常用选项

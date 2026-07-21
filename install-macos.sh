@@ -99,11 +99,6 @@ install_wrappers() {
 
   fetch_wrapper xclaude
   fetch_wrapper xcodex
-
-  install -m 0755 "${BIN_DIR}/xclaude" "${BIN_DIR}/claudex"
-  install -m 0755 "${BIN_DIR}/xcodex" "${BIN_DIR}/codexx"
-  ln -sfn claudex "${BIN_DIR}/xclaude"
-  ln -sfn codexx "${BIN_DIR}/xcodex"
 }
 
 detect_profile() {
@@ -151,8 +146,6 @@ print_summary() {
 安装完成：
   - claude   -> ${BIN_DIR}/claude
   - codex    -> ${BIN_DIR}/codex
-  - claudex  -> ${BIN_DIR}/claudex
-  - codexx   -> ${BIN_DIR}/codexx
   - xclaude  -> ${BIN_DIR}/xclaude
   - xcodex   -> ${BIN_DIR}/xcodex
 

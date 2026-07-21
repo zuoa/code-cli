@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# claudex - 以 bypassPermissions("YOLO")模式运行 Claude Code 的包装脚本
+# xclaude - 以 bypassPermissions("YOLO")模式运行 Claude Code 的包装脚本
 #
 # 用法:
-#   claudex "帮我修复所有 lint 错误"
-#   claudex -y "无人值守跑个重构任务"          # 跳过二次确认
-#   claudex --proxy "需要代理时加这个"
-#   claudex --safe "临时想用正常权限模式跑一次"
-#   claudex --model opus "换个模型"
-#   claudex --add-dir ../lib --add-dir ../apps "跨目录协作"
-#   claudex -- --permission-mode plan --allow-dangerously-skip-permissions "先规划再切bypass"
+#   xclaude "帮我修复所有 lint 错误"
+#   xclaude -y "无人值守跑个重构任务"          # 跳过二次确认
+#   xclaude --proxy "需要代理时加这个"
+#   xclaude --safe "临时想用正常权限模式跑一次"
+#   xclaude --model opus "换个模型"
+#   xclaude --add-dir ../lib --add-dir ../apps "跨目录协作"
+#   xclaude -- --permission-mode plan --allow-dangerously-skip-permissions "先规划再切bypass"
 #
 # 环境变量 (写进 ~/.zshrc 做默认值):
 #   CLAUDEX_MODEL          默认模型别名 (sonnet/opus/haiku/fable)，不设置则用 claude 自身默认
@@ -20,7 +20,7 @@
 #   CLAUDEX_SKIP_CONFIRM   设为 1 等价于始终传 -y，跳过二次确认
 #
 # 设计要点:
-#   1. 默认不使用代理（区别于 codexx），仅在显式传 --proxy 时才注入代理变量。
+#   1. 默认不使用代理（区别于 xcodex），仅在显式传 --proxy 时才注入代理变量。
 #   2. 默认加 --dangerously-skip-permissions，因为这是本脚本存在的意义（YOLO 模式）。
 #   3. 默认同时加 --disallowedTools 兜底防护：即便在 bypass 模式下，仍拒绝
 #      "rm -rf" 这类毁灭性命令。--disallowedTools 是官方文档确认在所有权限模式下

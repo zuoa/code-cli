@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# codexx - 通过代理运行 OpenAI Codex CLI 的包装脚本
+# xcodex - 通过代理运行 OpenAI Codex CLI 的包装脚本
 #
 # 用法:
-#   codexx [选项] -- [codex 原生参数...]
-#   codexx "写一个快速排序"                 # 直接把参数透传给 codex
-#   codexx --port 7890 "帮我重构这个函数"
-#   codexx --no-proxy "本地任务，不走代理"
-#   codexx --check                          # 仅测试代理连通性，不运行 codex
+#   xcodex [选项] -- [codex 原生参数...]
+#   xcodex "写一个快速排序"                 # 直接把参数透传给 codex
+#   xcodex --port 7890 "帮我重构这个函数"
+#   xcodex --no-proxy "本地任务，不走代理"
+#   xcodex --check                          # 仅测试代理连通性，不运行 codex
 #
 # 环境变量 (可写进 ~/.zshrc / ~/.bashrc 做默认值):
 #   CODEXX_PROXY_HOST   默认代理主机，默认 127.0.0.1
