@@ -8,6 +8,8 @@
 #   xcodex --port 7890 "帮我重构这个函数"
 #   xcodex --no-proxy "本地任务，不走代理"
 #   xcodex --check                          # 仅测试代理连通性，不运行 codex
+#   xcodex --yolo "帮我重构所有文件"        # 直接进入 yolo(全自动)模式，跳过确认
+#   xcodex --no-yolo "普通任务"             # 明确不进入 yolo 模式，跳过提示
 #
 # 环境变量 (可写进 ~/.zshrc / ~/.bashrc 做默认值):
 #   CODEXX_PROXY_HOST   默认代理主机，默认 127.0.0.1
@@ -15,6 +17,7 @@
 #   CODEXX_PROXY_TYPE   http | socks5 | socks5h，默认 socks5
 #   CODEXX_NO_PROXY     默认 NO_PROXY 列表
 #   CODEXX_MODEL        默认传给 codex 的 --model 参数（可选）
+#   CODEXX_YOLO         设为 1 等价于始终传 --yolo，自动进入 yolo 模式
 #
 # 设计要点:
 #   1. 代理变量只在本脚本及其子进程(即 codex 进程)生效，不污染当前交互 shell。
@@ -22,6 +25,7 @@
 #   3. 默认设置 NO_PROXY，避免本地/内网请求被错误代理。
 #   4. 运行前做一次轻量连通性检测，代理不可达时给出清晰提示而不是让 codex 卡死。
 #   5. 支持 --no-proxy 直接不设代理运行；支持自定义端口/协议；其余参数原样透传给 codex。
+#   6. 启动时询问是否进入 yolo(全自动)模式；--yolo/-y 跳过询问直接进入，--no-yolo 跳过询问不进入。
 
 set -eo pipefail
 
@@ -35,6 +39,11 @@ NO_PROXY_LIST="${CODEXX_NO_PROXY:-localhost,127.0.0.1,::1}"
 DEFAULT_MODEL="${CODEXX_MODEL:-}"
 USE_PROXY=1
 CHECK_ONLY=0
+# -1: 未指定(启动时询问), 0: 不进入 yolo, 1: 进入 yolo
+YOLO_MODE=-1
+if [[ "${CODEXX_YOLO:-}" == "1" ]]; then
+  YOLO_MODE=1
+fi
 EXTRA_ARGS=()
 
 # ---------- 参数解析 ----------
@@ -52,12 +61,16 @@ while [[ $# -gt 0 ]]; do
       CHECK_ONLY=1; shift ;;
     --model)
       DEFAULT_MODEL="$2"; shift 2 ;;
+    --yolo|-y)
+      YOLO_MODE=1; shift ;;
+    --no-yolo)
+      YOLO_MODE=0; shift ;;
     --)
       shift
       EXTRA_ARGS+=("$@")
       break ;;
     -h|--help)
-      sed -n '1,20p' "$0"
+      sed -n '/^#/p; /^[^#]/q' "$0" | head -n -1
       exit 0 ;;
     *)
       EXTRA_ARGS+=("$1"); shift ;;
@@ -95,8 +108,23 @@ if [[ "$CHECK_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
+# ---------- yolo 模式确认 ----------
+if [[ "$YOLO_MODE" -eq -1 ]]; then
+  echo "⚡ [$CMD] 是否以 yolo(全自动)模式启动 codex？"
+  echo "    yolo 模式下 codex 将自动执行所有操作，无需逐步确认。"
+  echo "    当前目录: $(pwd)"
+  read -r -p "    进入 yolo 模式吗？[y/N] " reply
+  case "$reply" in
+    [yY][eE][sS]|[yY]) YOLO_MODE=1 ;;
+    *) YOLO_MODE=0 ;;
+  esac
+fi
+
 # ---------- 组装 codex 参数 ----------
 CODEX_ARGS=()
+if [[ "$YOLO_MODE" -eq 1 ]]; then
+  CODEX_ARGS+=(--approval-policy auto)
+fi
 if [[ -n "$DEFAULT_MODEL" ]]; then
   CODEX_ARGS+=(--model "$DEFAULT_MODEL")
 fi
