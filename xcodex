@@ -161,7 +161,7 @@ fi
 # ---------- 组装 codex 参数 ----------
 CODEX_ARGS=()
 if [[ "$YOLO_MODE" -eq 1 ]]; then
-  CODEX_ARGS+=(--approval-policy auto)
+  CODEX_ARGS+=(--yolo)
 fi
 if [[ -n "$DEFAULT_MODEL" ]]; then
   CODEX_ARGS+=(--model "$DEFAULT_MODEL")
