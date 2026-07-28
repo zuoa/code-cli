@@ -14,7 +14,7 @@
 # 环境变量 (可写进 ~/.zshrc / ~/.bashrc 做默认值):
 #   CODEXX_PROXY_HOST   默认代理主机，默认 127.0.0.1
 #   CODEXX_PROXY_PORT   默认代理端口，默认 7897
-#   CODEXX_PROXY_TYPE   http | socks5 | socks5h，默认 socks5
+#   CODEXX_PROXY_TYPE   http | socks5 | socks5h，默认自动检测(先 socks5，再回退 http)
 #   CODEXX_NO_PROXY     默认 NO_PROXY 列表
 #   CODEXX_MODEL        默认传给 codex 的 --model 参数（可选）
 #   CODEXX_YOLO         设为 1 等价于始终传 --yolo，自动进入 yolo 模式
@@ -35,6 +35,7 @@ CMD=$(basename "$0")
 PROXY_HOST="${CODEXX_PROXY_HOST:-127.0.0.1}"
 PROXY_PORT="${CODEXX_PROXY_PORT:-7897}"
 PROXY_TYPE="${CODEXX_PROXY_TYPE:-socks5}"     # http | socks5 | socks5h
+PROXY_TYPE_EXPLICIT=0                        # 1 = 用户通过 --type 显式指定了协议
 NO_PROXY_LIST="${CODEXX_NO_PROXY:-localhost,127.0.0.1,::1}"
 DEFAULT_MODEL="${CODEXX_MODEL:-}"
 USE_PROXY=1
@@ -54,7 +55,7 @@ while [[ $# -gt 0 ]]; do
     --port)
       PROXY_PORT="$2"; shift 2 ;;
     --type)
-      PROXY_TYPE="$2"; shift 2 ;;      # http 或 socks5h
+      PROXY_TYPE="$2"; PROXY_TYPE_EXPLICIT=1; shift 2 ;;      # http 或 socks5h
     --no-proxy)
       USE_PROXY=0; shift ;;
     --check)
@@ -86,16 +87,50 @@ fi
 PROXY_URL="${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
 
 # ---------- 代理连通性检测 ----------
+# 用指定协议尝试一次，成功返回 0，失败返回 1
+_try_proxy() {
+  local url="$1"
+  curl -x "${url}" -s -m 5 -o /dev/null -w "%{http_code}" https://api.openai.com/ 2>/dev/null \
+    | grep -qE '^[0-9]{3}$'
+}
+
 check_proxy() {
-  echo "[$CMD] 检测代理 ${PROXY_URL} 是否可用..."
-  if curl -x "${PROXY_URL}" -s -m 5 -o /dev/null -w "%{http_code}" https://api.openai.com/ 2>/dev/null | grep -qE '^[0-9]{3}$'; then
-    echo "[$CMD] 代理可用 ✔"
-    return 0
-  else
-    echo "[$CMD] 代理不可达: ${PROXY_URL}" >&2
-    echo "[$CMD] 请确认本地代理软件(Clash/V2Ray等)已启动，且端口/协议正确。" >&2
-    return 1
+  # 若用户显式指定了 --type，只尝试该协议
+  if [[ "$PROXY_TYPE_EXPLICIT" -eq 1 ]]; then
+    echo "[$CMD] 检测代理 ${PROXY_URL} 是否可用..."
+    if _try_proxy "${PROXY_URL}"; then
+      echo "[$CMD] 代理可用 ✔"
+      return 0
+    else
+      echo "[$CMD] 代理不可达: ${PROXY_URL}" >&2
+      echo "[$CMD] 请确认本地代理软件(Clash/V2Ray等)已启动，且端口/协议正确。" >&2
+      return 1
+    fi
   fi
+
+  # 自动检测：先尝试 socks5，再回退到 http
+  local socks5_url="socks5://${PROXY_HOST}:${PROXY_PORT}"
+  local http_url="http://${PROXY_HOST}:${PROXY_PORT}"
+
+  echo "[$CMD] 检测代理 ${socks5_url} 是否可用..."
+  if _try_proxy "${socks5_url}"; then
+    echo "[$CMD] 代理可用 (socks5) ✔"
+    PROXY_TYPE="socks5"
+    PROXY_URL="${socks5_url}"
+    return 0
+  fi
+
+  echo "[$CMD] socks5 不可达，尝试回退到 http 代理 ${http_url}..."
+  if _try_proxy "${http_url}"; then
+    echo "[$CMD] 代理可用 (http) ✔"
+    PROXY_TYPE="http"
+    PROXY_URL="${http_url}"
+    return 0
+  fi
+
+  echo "[$CMD] 代理不可达 (已尝试 socks5 和 http): ${PROXY_HOST}:${PROXY_PORT}" >&2
+  echo "[$CMD] 请确认本地代理软件(Clash/V2Ray等)已启动，且端口/协议正确。" >&2
+  return 1
 }
 
 if [[ "$USE_PROXY" -eq 1 ]]; then
