@@ -34,7 +34,7 @@ CMD=$(basename "$0")
 # ---------- 默认配置 ----------
 PROXY_HOST="${CODEXX_PROXY_HOST:-127.0.0.1}"
 PROXY_PORT="${CODEXX_PROXY_PORT:-7897}"
-PROXY_TYPE="${CODEXX_PROXY_TYPE:-socks5}"     # http | socks5 | socks5h
+PROXY_TYPE="${CODEXX_PROXY_TYPE:-socks5}"     # http | socks5 | socks5h；未通过 --type 指定时自动检测(先 socks5，再回退 http)
 PROXY_TYPE_EXPLICIT=0                        # 1 = 用户通过 --type 显式指定了协议
 NO_PROXY_LIST="${CODEXX_NO_PROXY:-localhost,127.0.0.1,::1}"
 DEFAULT_MODEL="${CODEXX_MODEL:-}"
@@ -87,6 +87,9 @@ fi
 PROXY_URL="${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
 
 # ---------- 代理连通性检测 ----------
+# 构造代理 URL
+_make_proxy_url() { echo "${1}://${PROXY_HOST}:${PROXY_PORT}"; }
+
 # 用指定协议尝试一次，成功返回 0，失败返回 1
 _try_proxy() {
   local url="$1"
@@ -109,8 +112,8 @@ check_proxy() {
   fi
 
   # 自动检测：先尝试 socks5，再回退到 http
-  local socks5_url="socks5://${PROXY_HOST}:${PROXY_PORT}"
-  local http_url="http://${PROXY_HOST}:${PROXY_PORT}"
+  local socks5_url; socks5_url="$(_make_proxy_url socks5)"
+  local http_url;   http_url="$(_make_proxy_url http)"
 
   echo "[$CMD] 检测代理 ${socks5_url} 是否可用..."
   if _try_proxy "${socks5_url}"; then
