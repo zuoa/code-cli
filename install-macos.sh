@@ -17,6 +17,8 @@ INSTALL_ROOT="${INSTALL_ROOT:-$HOME/.local}"
 BIN_DIR="${INSTALL_ROOT}/bin"
 CLAUDE_PACKAGE="@anthropic-ai/claude-code"
 CODEX_PACKAGE="@openai/codex"
+GROK_INSTALL_URL="https://x.ai/cli/install.sh"
+GROK_BIN="${HOME}/.grok/bin/grok"
 
 log() {
   printf '[install-macos] %s\n' "$*"
@@ -70,14 +72,23 @@ install_cli_packages() {
     log "检测到 codex 已安装，跳过安装 ${CODEX_PACKAGE}"
     need_codex=0
   fi
-  if [[ $need_claude -eq 0 && $need_codex -eq 0 ]]; then
+  if [[ $need_claude -eq 1 || $need_codex -eq 1 ]]; then
+    local pkgs=()
+    [[ $need_claude -eq 1 ]] && pkgs+=("$CLAUDE_PACKAGE")
+    [[ $need_codex -eq 1 ]] && pkgs+=("$CODEX_PACKAGE")
+    log "安装 ${pkgs[*]} 到 ${INSTALL_ROOT} ..."
+    npm install --global --prefix "$INSTALL_ROOT" "${pkgs[@]}"
+  fi
+
+  if command -v grok >/dev/null 2>&1 || [[ -x "$GROK_BIN" ]]; then
+    log '检测到 grok 已安装，跳过安装 Grok Build'
     return
   fi
-  local pkgs=()
-  [[ $need_claude -eq 1 ]] && pkgs+=("$CLAUDE_PACKAGE")
-  [[ $need_codex -eq 1 ]] && pkgs+=("$CODEX_PACKAGE")
-  log "安装 ${pkgs[*]} 到 ${INSTALL_ROOT} ..."
-  npm install --global --prefix "$INSTALL_ROOT" "${pkgs[@]}"
+  log '未检测到 grok，开始安装 Grok Build CLI...'
+  curl -fsSL "$GROK_INSTALL_URL" | bash
+  if ! command -v grok >/dev/null 2>&1 && [[ ! -x "$GROK_BIN" ]]; then
+    fail 'Grok Build 安装完成，但未找到 grok 命令。'
+  fi
 }
 
 fetch_wrapper() {
@@ -99,6 +110,7 @@ install_wrappers() {
 
   fetch_wrapper xclaude
   fetch_wrapper xcodex
+  fetch_wrapper xgrok
 }
 
 detect_profile() {
@@ -118,17 +130,18 @@ detect_profile() {
   printf '%s\n' "${HOME}/.zprofile"
 }
 
-ensure_path() {
+ensure_path_dir() {
+  local dir="$1"
   local profile export_dir line
 
-  case "$BIN_DIR" in
-    "${HOME}"/*) export_dir="\$HOME/${BIN_DIR#"${HOME}/"}" ;;
-    *) export_dir="$BIN_DIR" ;;
-  esac
-
-  if printf ':%s:' "$PATH" | grep -Fq ":${BIN_DIR}:"; then
+  if printf ':%s:' "$PATH" | grep -Fq ":${dir}:"; then
     return
   fi
+
+  case "$dir" in
+    "${HOME}"/*) export_dir="\$HOME/${dir#"${HOME}/"}" ;;
+    *) export_dir="$dir" ;;
+  esac
 
   profile="$(detect_profile)"
   line="export PATH=\"${export_dir}:\$PATH\""
@@ -136,7 +149,14 @@ ensure_path() {
   touch "$profile"
   if ! grep -Fqx "$line" "$profile"; then
     printf '\n%s\n' "$line" >> "$profile"
-    log "已将 ${BIN_DIR} 写入 PATH: ${profile}"
+    log "已将 ${dir} 写入 PATH: ${profile}"
+  fi
+}
+
+ensure_path() {
+  ensure_path_dir "$BIN_DIR"
+  if [[ -x "$GROK_BIN" ]]; then
+    ensure_path_dir "$(dirname "$GROK_BIN")"
   fi
 }
 
@@ -146,8 +166,10 @@ print_summary() {
 安装完成：
   - claude   -> ${BIN_DIR}/claude
   - codex    -> ${BIN_DIR}/codex
+  - grok     -> ${GROK_BIN}
   - xclaude  -> ${BIN_DIR}/xclaude
   - xcodex   -> ${BIN_DIR}/xcodex
+  - xgrok    -> ${BIN_DIR}/xgrok
 
 如果当前终端还找不到命令，请执行：
   export PATH="${BIN_DIR}:\$PATH"

@@ -1,6 +1,6 @@
 # code-cli
 
-macOS 下 Claude Code 与 OpenAI Codex CLI 的增强包装脚本，支持代理、YOLO 模式、权限防护等常用场景。
+macOS 下 Claude Code、OpenAI Codex 与 Grok Build CLI 的增强包装脚本，支持代理、YOLO 模式、权限防护等常用场景。
 
 ## 包含脚本
 
@@ -8,6 +8,7 @@ macOS 下 Claude Code 与 OpenAI Codex CLI 的增强包装脚本，支持代理�
 |------|-----------|------|
 | `xclaude` | `xclaude` | Claude Code 的 bypass 模式包装 |
 | `xcodex`  | `xcodex`  | OpenAI Codex 的代理模式包装   |
+| `xgrok`   | `xgrok`   | Grok Build 的 YOLO / 代理包装 |
 
 ---
 
@@ -19,7 +20,7 @@ macOS 下 Claude Code 与 OpenAI Codex CLI 的增强包装脚本，支持代理�
 curl -fsSL https://raw.githubusercontent.com/zuoa/code-cli/main/install-macos.sh | bash
 ```
 
-curl pipe 模式下，安装脚本会自动从 GitHub 下载 `xclaude` / `xcodex` 包装脚本，无需克隆仓库。
+curl pipe 模式下，安装脚本会自动从 GitHub 下载 `xclaude` / `xcodex` / `xgrok` 包装脚本，无需克隆仓库。
 
 **方式二：克隆仓库后安装**
 
@@ -34,8 +35,9 @@ bash install-macos.sh
 1. 检测并安装 Homebrew（如未安装）
 2. 检测并安装 Node.js / npm（如未安装）
 3. 全局安装 `@anthropic-ai/claude-code` 和 `@openai/codex`（已安装则跳过）
-4. 将包装脚本安装到 `~/.local/bin/`
-5. 自动将 `~/.local/bin` 写入 shell 配置文件（`~/.zshrc` 等）
+4. 通过官方脚本安装 Grok Build CLI（已安装则跳过）
+5. 将包装脚本安装到 `~/.local/bin/`
+6. 自动将 `~/.local/bin`（以及 `~/.grok/bin`）写入 shell 配置文件（`~/.zshrc` 等）
 
 > **自定义安装目录**：可通过 `INSTALL_ROOT` 环境变量覆盖默认的 `~/.local`，例如：
 > ```bash
@@ -146,12 +148,68 @@ export CODEXX_MODEL=                  # 默认传给 codex 的 --model 参数
 
 ---
 
+## xgrok
+
+以 `--always-approve`（YOLO）模式运行 Grok Build，并默认走本地代理的包装脚本。
+
+### 用法
+
+```bash
+xgrok "帮我修复所有 lint 错误"
+xgrok -y "无人值守跑个重构任务"           # 跳过二次确认
+xgrok --no-proxy "本地能直连 xAI 时用"
+xgrok --safe "临时想用正常权限模式"
+xgrok --model grok-4.6 "换个模型"
+xgrok --check                            # 仅测试代理连通性，不运行 grok
+xgrok login                              # 子命令原样透传（仍走代理）
+xgrok -- --permission-mode auto          # 原样透传 grok 原生参数
+```
+
+### 常用选项
+
+| 选项 | 说明 |
+|------|------|
+| `-y` / `--yes` / `--yolo` | 跳过危险模式的二次确认提示 |
+| `--proxy` | 显式启用代理（默认已启用） |
+| `--host HOST` | 指定代理主机（默认 `127.0.0.1`） |
+| `--port PORT` | 指定代理端口（默认 `7897`） |
+| `--type TYPE` | 代理协议：`http` / `socks5` / `socks5h`（默认自动检测） |
+| `--no-proxy` | 不使用代理，直接运行 grok |
+| `--check` | 仅检测代理连通性，不启动 grok |
+| `--model` / `-m` MODEL | 指定 Grok 模型（`grok-4.6` / `grok-4.5` / `grok-build` 等） |
+| `--cwd DIR` | 指定工作目录（传给 grok `--cwd`） |
+| `--safe` | 不加 always-approve，使用 Grok 的正常权限模式 |
+| `--no-guard` | 关闭默认的 `--deny` 防护规则 |
+| `--` | 之后的参数原样透传给 `grok` |
+
+### 环境变量
+
+```bash
+export GROKX_MODEL=grok-4.6          # 默认模型
+export GROKX_PROXY_HOST=127.0.0.1    # 代理主机
+export GROKX_PROXY_PORT=7897         # 代理端口
+export GROKX_PROXY_TYPE=socks5       # 代理协议；不设则自动检测
+export GROKX_NO_PROXY=localhost,127.0.0.1,::1
+export GROKX_SKIP_CONFIRM=1          # 始终跳过二次确认
+```
+
+### 设计要点
+
+- **默认使用代理**（与 `xcodex` 一致），未指定 `--type` 时先试 socks5，再回退 http。
+- **默认开启 `--always-approve`**。首次运行前打印醒目警告，需手动确认；`login` / `models` / `update` 等子命令会跳过 YOLO 与确认。
+- **默认开启 `--deny` 防护**：即便 always-approve，仍拒绝 `rm -rf`、`rm -fr`、`sudo rm` 等毁灭性命令。
+- 代理变量仅在 grok 子进程中生效，不污染当前交互 shell。
+- 若 PATH 里没有 `grok`，会回退查找 `~/.grok/bin/grok`。
+
+---
+
 ## 前置依赖
 
 - macOS（`install-macos.sh` 仅支持 macOS）
 - Node.js >= 18 / npm（安装脚本会自动安装）
 - `@anthropic-ai/claude-code`（安装脚本会自动安装）
 - `@openai/codex`（安装脚本会自动安装）
+- Grok Build CLI（安装脚本会通过官方 `https://x.ai/cli/install.sh` 安装）
 
 ---
 

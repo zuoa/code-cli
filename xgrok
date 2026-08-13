@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+#
+# xgrok - 以 always-approve(YOLO) 模式、可选代理运行 Grok Build 的包装脚本
+#
+# 用法:
+#   xgrok "帮我修复所有 lint 错误"
+#   xgrok -y "无人值守跑个重构任务"           # 跳过二次确认
+#   xgrok --no-proxy "本地能直连 xAI 时用"
+#   xgrok --safe "临时想用正常权限模式跑一次"
+#   xgrok --model grok-4.6 "换个模型"
+#   xgrok --check                             # 仅测试代理连通性
+#   xgrok login                               # 子命令原样透传（仍走代理）
+#   xgrok -- --permission-mode auto           # 原样透传 grok 原生参数
+#
+# 环境变量 (写进 ~/.zshrc 做默认值):
+#   GROKX_MODEL          默认模型 (grok-4.6 / grok-4.5 / grok-build)
+#   GROKX_PROXY_HOST     默认代理主机，默认 127.0.0.1
+#   GROKX_PROXY_PORT     默认代理端口，默认 7897
+#   GROKX_PROXY_TYPE     http | socks5 | socks5h，默认自动检测(先 socks5，再回退 http)
+#   GROKX_NO_PROXY       默认 NO_PROXY 列表
+#   GROKX_SKIP_CONFIRM   设为 1 等价于始终传 -y，跳过二次确认
+#
+# 设计要点:
+#   1. 默认使用代理（与 xcodex 一致，xAI 在国内通常需要），--no-proxy 关闭。
+#   2. 默认加 --always-approve，因为这是本脚本存在的意义（YOLO 模式）。
+#   3. 默认同时加 --deny 兜底防护：即便 always-approve，仍拒绝 rm -rf 这类
+#      毁灭性命令。deny 规则在 always-approve 下仍然生效。用 --no-guard 关闭。
+#   4. 首次运行前打印醒目警告并要求二次确认。-y / --yes / --yolo 或
+#      GROKX_SKIP_CONFIRM=1 跳过。
+#   5. --safe 可以临时回到正常权限模式（不加 always-approve）。
+#   6. login / models / update 等 grok 子命令跳过 YOLO 与确认，只保留代理。
+#   7. 其余未识别的参数原样透传给 grok。
+
+set -eo pipefail
+
+CMD=$(basename "$0")
+
+# ---------- 默认配置 ----------
+MODEL="${GROKX_MODEL:-}"
+PROXY_HOST="${GROKX_PROXY_HOST:-127.0.0.1}"
+PROXY_PORT="${GROKX_PROXY_PORT:-7897}"
+PROXY_TYPE="${GROKX_PROXY_TYPE:-socks5}"     # http | socks5 | socks5h；未通过 --type 指定时自动检测
+PROXY_TYPE_EXPLICIT=0
+NO_PROXY_LIST="${GROKX_NO_PROXY:-localhost,127.0.0.1,::1}"
+USE_PROXY=1
+CHECK_ONLY=0
+SAFE_MODE=0
+SKIP_CONFIRM="${GROKX_SKIP_CONFIRM:-0}"
+USE_GUARD=1
+CWD=""
+EXTRA_ARGS=()
+
+# grok 子命令：走代理，但不套 always-approve / 二次确认
+GROK_SUBCOMMANDS='agent|completions|dashboard|doctor|du|disk-usage|export|help|inspect|leader|login|logout|mcp|memory|models|plugin|sessions|setup|trace|update|version|v|worktree|wrap'
+
+# ---------- 参数解析 ----------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --proxy)
+      USE_PROXY=1; shift ;;
+    --host)
+      PROXY_HOST="$2"; USE_PROXY=1; shift 2 ;;
+    --port)
+      PROXY_PORT="$2"; USE_PROXY=1; shift 2 ;;
+    --type)
+      PROXY_TYPE="$2"; PROXY_TYPE_EXPLICIT=1; shift 2 ;;
+    --no-proxy)
+      USE_PROXY=0; shift ;;
+    --check)
+      CHECK_ONLY=1; shift ;;
+    --safe)
+      SAFE_MODE=1; shift ;;
+    --no-guard)
+      USE_GUARD=0; shift ;;
+    --model|-m)
+      MODEL="$2"; shift 2 ;;
+    --cwd)
+      CWD="$2"; shift 2 ;;
+    -y|--yes|--yolo)
+      SKIP_CONFIRM=1; shift ;;
+    --)
+      shift
+      EXTRA_ARGS+=("$@")
+      break ;;
+    -h|--help)
+      awk 'NR==1{next} /^[^#]/{exit} {print}' "$0"
+      exit 0 ;;
+    *)
+      EXTRA_ARGS+=("$1"); shift ;;
+  esac
+done
+
+# ---------- 定位 grok ----------
+GROK_BIN=""
+if command -v grok >/dev/null 2>&1; then
+  GROK_BIN="$(command -v grok)"
+elif [[ -x "${HOME}/.grok/bin/grok" ]]; then
+  GROK_BIN="${HOME}/.grok/bin/grok"
+else
+  echo "[$CMD] 未找到 grok 命令，请先安装 Grok Build CLI:" >&2
+  echo "    curl -fsSL https://x.ai/cli/install.sh | bash" >&2
+  exit 1
+fi
+
+is_grok_subcommand() {
+  [[ ${#EXTRA_ARGS[@]} -gt 0 ]] && [[ "${EXTRA_ARGS[0]}" =~ ^(${GROK_SUBCOMMANDS})$ ]]
+}
+
+# ---------- 代理连通性检测 ----------
+_make_proxy_url() { echo "${1}://${PROXY_HOST}:${PROXY_PORT}"; }
+
+_try_proxy() {
+  local url="$1"
+  curl -x "${url}" -s -m 5 -o /dev/null -w "%{http_code}" https://api.x.ai/ 2>/dev/null \
+    | grep -qE '^[0-9]{3}$'
+}
+
+check_proxy() {
+  local PROXY_URL
+  PROXY_URL="$(_make_proxy_url "$PROXY_TYPE")"
+
+  if [[ "$PROXY_TYPE_EXPLICIT" -eq 1 ]]; then
+    echo "[$CMD] 检测代理 ${PROXY_URL} 是否可用..."
+    if _try_proxy "${PROXY_URL}"; then
+      echo "[$CMD] 代理可用 ✔"
+      return 0
+    else
+      echo "[$CMD] 代理不可达: ${PROXY_URL}" >&2
+      echo "[$CMD] 请确认本地代理软件(Clash/V2Ray等)已启动，且端口/协议正确。" >&2
+      return 1
+    fi
+  fi
+
+  local socks5_url http_url
+  socks5_url="$(_make_proxy_url socks5)"
+  http_url="$(_make_proxy_url http)"
+
+  echo "[$CMD] 检测代理 ${socks5_url} 是否可用..."
+  if _try_proxy "${socks5_url}"; then
+    echo "[$CMD] 代理可用 (socks5) ✔"
+    PROXY_TYPE="socks5"
+    return 0
+  fi
+
+  echo "[$CMD] socks5 不可达，尝试回退到 http 代理 ${http_url}..."
+  if _try_proxy "${http_url}"; then
+    echo "[$CMD] 代理可用 (http) ✔"
+    PROXY_TYPE="http"
+    return 0
+  fi
+
+  echo "[$CMD] 代理不可达 (已尝试 socks5 和 http): ${PROXY_HOST}:${PROXY_PORT}" >&2
+  echo "[$CMD] 请确认本地代理软件(Clash/V2Ray等)已启动，且端口/协议正确。" >&2
+  return 1
+}
+
+if [[ "$USE_PROXY" -eq 1 ]]; then
+  if ! check_proxy; then
+    exit 1
+  fi
+fi
+
+if [[ "$CHECK_ONLY" -eq 1 ]]; then
+  exit 0
+fi
+
+# ---------- 危险模式二次确认 ----------
+if ! is_grok_subcommand && [[ "$SAFE_MODE" -eq 0 && "$SKIP_CONFIRM" -ne 1 ]]; then
+  echo "⚠️  [$CMD] 即将以 --always-approve (YOLO) 模式启动 Grok Build。"
+  echo "    所有文件写入 / shell 命令 / 网络请求都不会再询问确认。"
+  echo "    仅建议在容器/VM等隔离环境，或你完全信任当前任务范围时使用。"
+  echo "    当前目录: $(pwd)"
+  read -r -p "    确认继续吗？[y/N] " reply
+  case "$reply" in
+    [yY][eE][sS]|[yY]) ;;
+    *) echo "[$CMD] 已取消。可以加 --safe 使用正常权限模式，或加 -y 跳过此确认。"; exit 1 ;;
+  esac
+fi
+
+# ---------- 组装 grok 参数 ----------
+GROK_ARGS=()
+
+if ! is_grok_subcommand && [[ "$SAFE_MODE" -eq 0 ]]; then
+  GROK_ARGS+=(--always-approve)
+  if [[ "$USE_GUARD" -eq 1 ]]; then
+    GROK_ARGS+=(--deny "Bash(rm -rf *)" --deny "Bash(rm -fr *)" --deny "Bash(sudo rm *)")
+  fi
+fi
+
+if [[ -n "$MODEL" ]]; then
+  GROK_ARGS+=(--model "$MODEL")
+fi
+
+if [[ -n "$CWD" ]]; then
+  GROK_ARGS+=(--cwd "$CWD")
+fi
+
+if [[ "${#EXTRA_ARGS[@]}" -gt 0 ]]; then
+  GROK_ARGS+=("${EXTRA_ARGS[@]}")
+fi
+
+# ---------- 运行 ----------
+run_grok() {
+  if [[ "$USE_PROXY" -eq 1 ]]; then
+    local PROXY_URL
+    PROXY_URL="$(_make_proxy_url "$PROXY_TYPE")"
+    echo "[$CMD] 使用代理 ${PROXY_URL} 启动 grok..."
+    env \
+      http_proxy="${PROXY_URL}" \
+      https_proxy="${PROXY_URL}" \
+      HTTP_PROXY="${PROXY_URL}" \
+      HTTPS_PROXY="${PROXY_URL}" \
+      all_proxy="${PROXY_URL}" \
+      ALL_PROXY="${PROXY_URL}" \
+      no_proxy="${NO_PROXY_LIST}" \
+      NO_PROXY="${NO_PROXY_LIST}" \
+      "$GROK_BIN" "${GROK_ARGS[@]}"
+  else
+    echo "[$CMD] 不使用代理，直接启动 grok..."
+    env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
+      "$GROK_BIN" "${GROK_ARGS[@]}"
+  fi
+}
+
+run_grok
